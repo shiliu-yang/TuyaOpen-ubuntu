@@ -95,12 +95,22 @@ if(CONFIG_ENABLE_WIRED)
     list(APPEND INIT_SRC "tuyaos_adapter/include/init/src/tkl_init_wired.c")
 endif()
 
+# at cellular
+# aux_source_directory("${CMAKE_SOURCE_DIR}/tuyaos_adapter/src/at_cellular/src" AT_CELLULAR_SRC)
+file(GLOB_RECURSE AT_CELLULAR_SRC "${CMAKE_SOURCE_DIR}/tuyaos_adapter/src/at_cellular/src/*.c")
+set(AT_CELLULAR_INC 
+    "${CMAKE_SOURCE_DIR}/tuyaos_adapter/src/at_cellular/include"
+    "${CMAKE_SOURCE_DIR}/tuyaos_adapter/src/at_cellular/include/vendor"
+    "${CMAKE_SOURCE_DIR}/tuyaos_adapter/src/at_cellular/include/utils"
+    )
+
 set(SOURCES 
     ${UTILITIES_SRC} 
     ${ADAPTER_SRC} 
     ${INIT_SRC}
     ${WIFI_SRC}
     ${BT_SRC}
+    ${AT_CELLULAR_SRC}
 )
 
 file(GLOB_RECURSE ADAPTER_INCLUDE_SUB_DIRS LIST_DIRECTORIES true "tuyaos_adapter/include/*")
@@ -133,6 +143,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/tuyaos_adapter/include/wifi
     ${CMAKE_SOURCE_DIR}/tuyaos_adapter/include/wired
     ${WPA_INC}
+    ${AT_CELLULAR_INC}
 )
 
 if(OPEN_HEADER_DIR)

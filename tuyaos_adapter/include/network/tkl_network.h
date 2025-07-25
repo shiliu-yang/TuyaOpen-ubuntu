@@ -148,6 +148,17 @@ TUYA_ERRNO tkl_net_shutdown(const int fd, const int how);
 int tkl_net_socket_create(const TUYA_PROTOCOL_TYPE_E type);
 
 /**
+* @brief Create a IPv6 tcp/udp socket
+*
+* @param[in] type: protocol type, tcp or udp
+*
+* @note This API is used for creating a tcp/udp socket.
+*
+* @return file descriptor
+*/
+int tkl_net_socket_create_v6(const TUYA_PROTOCOL_TYPE_E type);
+
+/**
 * @brief Connect to network
 *
 * @param[in] fd: file descriptor
@@ -379,6 +390,135 @@ OPERATE_RET tkl_net_setsockopt(const int fd, const TUYA_OPT_LEVEL level, const T
 * @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
 */
 OPERATE_RET tkl_net_getsockopt(const int fd, const TUYA_OPT_LEVEL level, const TUYA_OPT_NAME optname, void *optval, int *optlen);
+
+/**
+* @brief Set timeout option of socket fd
+*
+* @param[in] fd: file descriptor
+* @param[in] ms_timeout: timeout in ms
+* @param[in] type: transfer type, receive or send
+*
+* @note This API is used for setting timeout option of socket fd.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_set_timeout(const int fd, const int ms_timeout, const TUYA_TRANS_TYPE_E type);
+
+/**
+* @brief Set buffer_size option of socket fd
+*
+* @param[in] fd: file descriptor
+* @param[in] buf_size: buffer size in byte
+* @param[in] type: transfer type, receive or send
+*
+* @note This API is used for setting buffer_size option of socket fd.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_set_bufsize(const int fd, const int buf_size, const TUYA_TRANS_TYPE_E type);
+
+/**
+* @brief Enable reuse option of socket fd
+*
+* @param[in] fd: file descriptor
+*
+* @note This API is used to enable reuse option of socket fd.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_set_reuse(const int fd);
+
+/**
+* @brief Disable nagle option of socket fd
+*
+* @param[in] fd: file descriptor
+*
+* @note This API is used to disable nagle option of socket fd.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_disable_nagle(const int fd);
+
+/**
+* @brief Enable broadcast option of socket fd
+*
+* @param[in] fd: file descriptor
+*
+* @note This API is used to enable broadcast option of socket fd.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_set_broadcast(const int fd);
+
+/**
+* @brief Set keepalive option of socket fd to monitor the connection
+*
+* @param[in] fd: file descriptor
+* @param[in] alive: keepalive option, enable or disable option
+* @param[in] idle: keep idle option, if the connection has no data exchange with the idle time(in seconds), start probe.
+* @param[in] intr: keep interval option, the probe time interval.
+* @param[in] cnt: keep count option, probe count.
+*
+* @note This API is used to set keepalive option of socket fd to monitor the connection.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_set_keepalive(int fd, const BOOL_T alive, const uint32_t idle, const uint32_t intr, const uint32_t cnt);
+
+/**
+* @brief Get socket name
+*
+* @param[in] fd: file descriptor
+* @param[out] addr: ip address
+* @param[out] port: port information
+*
+* @note This API is used to Get the current name for the specified socket
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_getsockname(int fd, TUYA_IP_ADDR_T *addr, uint16_t *port);
+
+/**
+* @brief Get name of connected peer socket
+*
+* @param[in] fd: file descriptor
+* @param[out] addr: ip address
+* @param[out] port: port information
+*
+* @note This API is used to Get the name of connected peer socket.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_getpeername(int fd, TUYA_IP_ADDR_T *addr, uint16_t *port);
+
+/**
+* @brief Set the system hostname
+*
+* @param[in] hostname: hostname to set
+*
+* @note This API is used to set the system hostname.
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_sethostname(const char *hostname);
+
+/**
+ * @brief get netif by index
+ *
+ * @param[in]       net_if_idx    the num of netif index
+ * @return  NULL: get netif fail   other: the point of netif
+ */
+// void* tkl_net_get_netif_by_index(const TUYA_NETIF_TYPE_E net_if_idx);
+
+/**
+* @brief Check ipv4/v6
+*
+* @param[in] has_ipv4: ipv4 is ready
+* @param[in] has_ipv6: ipv6 is ready
+*
+* @return OPRT_OK on success. Others on error, please refer to tuya_error_code.h
+*/
+OPERATE_RET tkl_net_check_system_ipv4_ipv6(BOOL_T *has_ipv4, BOOL_T *has_ipv6);
 
 #ifdef __cplusplus
 }
