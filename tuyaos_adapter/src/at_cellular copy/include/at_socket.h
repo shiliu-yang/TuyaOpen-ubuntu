@@ -1,12 +1,12 @@
 /**
- * @file at_client.h
- * @brief at_client module is used to
+ * @file at_socket.h
+ * @brief at_socket module is used to manage socket connections in cellular networks.
  * @version 0.1
  * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
  */
 
-#ifndef __AT_CLIENT_H__
-#define __AT_CLIENT_H__
+#ifndef __AT_SOCKET_H__
+#define __AT_SOCKET_H__
 
 #include "tuya_cloud_types.h"
 
@@ -26,8 +26,13 @@ extern "C" {
 ********************function declaration********************
 ***********************************************************/
 
+int at_get_errno(void);
+void at_set_errno(int errno);
+
+int at_socket(int domain, int type, int protocol);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __AT_CLIENT_H__ */
+#endif /* __AT_SOCKET_H__ */

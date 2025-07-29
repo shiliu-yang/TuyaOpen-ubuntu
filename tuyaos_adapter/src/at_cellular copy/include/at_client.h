@@ -26,6 +26,8 @@ extern "C" {
 ********************function declaration********************
 ***********************************************************/
 
+OPERATE_RET at_client_init(char *transport_name);
+
 #ifdef __cplusplus
 }
 #endif
