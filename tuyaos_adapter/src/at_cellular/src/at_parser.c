@@ -36,6 +36,10 @@ typedef struct {
     AT_LINE_T *line_head; // Pointer to the head of the line list
     AT_LINE_T *line_tail; // Pointer to the tail of the line list
     uint32_t line_count;  // Count of lines processed
+
+    // response pattern
+    AT_RESPONSE_PATTERN_T *pattern;
+    uint32_t pattern_count; // Count of response patterns registered
 } AT_PARSER_T;
 /***********************************************************
 ********************function declaration********************
@@ -72,8 +76,147 @@ OPERATE_RET at_parser_init(AT_PARSER_HANDLE *handle, AT_PARSER_CFG_T *cfg)
     return rt;
 }
 
-// 命令注册
-// OPERATE_RET at_parser_
+// 数据解析
+OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
+{
+    OPERATE_RET rt = OPRT_OK;
+    
+    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(data, OPRT_INVALID_PARM);
+    
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+    
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return OPRT_INVALID_PARM;
+    }
+    
+    // 1. 行解析：将原始数据解析成完整的行
+    rt = at_parser_line_input(handle, data, length);
+    if (rt != OPRT_OK) {
+        return rt;
+    }
+    
+    // 2. 响应处理：对解析出的行进行模式匹配和处理
+    rt = at_parser_process_lines(handle);
+    
+    return rt;
+}
+
+/**
+ * @brief 处理已解析的行数据 - 响应匹配与处理层
+ */
+static OPERATE_RET at_parser_process_lines(AT_PARSER_HANDLE handle)
+{
+    OPERATE_RET rt = OPRT_OK;
+    
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+    AT_LINE_T *current_line = parser->line_head;
+    
+    // 遍历所有未处理的行
+    while (current_line != NULL) {
+        AT_LINE_T *next_line = current_line->next;
+        
+        // 对每一行进行响应匹配
+        at_response_pattern_t *matched_pattern = at_parser_match_response_pattern(parser, current_line->data);
+        
+        if (matched_pattern) {
+            // 找到匹配的模式，进行响应处理
+            at_parser_process_response(parser, current_line->data, matched_pattern);
+        } else {
+            // 未匹配的响应，记录或者作为未知响应处理
+            PR_WARN("Unknown response: %s", current_line->data);
+        }
+        
+        // 移除已处理的行
+        at_parser_remove_line(parser, current_line);
+        
+        current_line = next_line;
+    }
+    
+    return rt;
+}
+
+/**
+ * @brief 响应模式匹配
+ */
+static at_response_pattern_t *at_parser_match_response_pattern(AT_PARSER_T *parser, const char *line)
+{
+    if (!parser->pattern || parser->pattern_count == 0) {
+        return NULL;
+    }
+    
+    // 计算行的哈希值用于快速匹配
+    uint32_t line_hash = at_parser_compute_hash(line);
+    
+    // 遍历已注册的响应模式
+    for (uint32_t i = 0; i < parser->pattern_count; i++) {
+        at_response_pattern_t *pattern = &parser->pattern[i];
+        
+        // 快速哈希比较
+        if (pattern->pattern_hash != 0 && pattern->pattern_hash != line_hash) {
+            continue;
+        }
+        
+        // 精确匹配
+        if (at_parser_pattern_match(line, pattern)) {
+            return pattern;
+        }
+    }
+    
+    return NULL;
+}
+
+/**
+ * @brief 处理匹配的响应 - 这就是您问的 process_response 功能
+ */
+static OPERATE_RET at_parser_process_response(AT_PARSER_T *parser, const char *line, at_response_pattern_t *pattern)
+{
+    OPERATE_RET rt = OPRT_OK;
+    
+    PR_DEBUG("Processing response: %s, type: %d, is_final: %d", 
+             line, pattern->response_type, pattern->is_final);
+    
+    if (pattern->is_final) {
+        // 这是最终响应，命令执行完毕
+        if (pattern->response_type == AT_RESPONSE_TYPE_FINAL_OK) {
+            // 命令成功完成
+            PR_INFO("Command completed successfully");
+            at_parser_notify_command_success(parser, line);
+        } else if (pattern->response_type == AT_RESPONSE_TYPE_FINAL_ERROR) {
+            // 命令失败
+            PR_ERR("Command failed: %s", line);
+            at_parser_notify_command_error(parser, line);
+        }
+        
+        // 可以发送下一个命令了
+        at_parser_send_next_command(parser);
+        
+    } else {
+        // 这是中间响应，继续等待更多数据
+        switch (pattern->response_type) {
+            case AT_RESPONSE_TYPE_ECHO:
+                PR_DEBUG("Command echo received: %s", line);
+                break;
+                
+            case AT_RESPONSE_TYPE_INTERMEDIATE:
+                PR_DEBUG("Intermediate response: %s", line);
+                at_parser_collect_intermediate_response(parser, line);
+                break;
+                
+            case AT_RESPONSE_TYPE_URC:
+                PR_INFO("URC received: %s", line);
+                at_parser_handle_urc(parser, line, pattern);
+                break;
+                
+            default:
+                PR_WARN("Unknown response type: %d", pattern->response_type);
+                break;
+        }
+    }
+    
+    return rt;
+}
 
 OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle)
 {
@@ -157,7 +300,7 @@ OPERATE_RET at_parser_free_line(AT_LINE_T *line)
     return OPRT_OK;
 }
 
-OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
+OPERATE_RET at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
 {
     OPERATE_RET rt = OPRT_OK;
 
@@ -188,6 +331,32 @@ OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length
             break;
         }
     } while (1);
+
+    return rt;
+}
+
+OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern, uint32_t pattern_count)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(pattern, OPRT_INVALID_PARM);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return OPRT_INVALID_PARM;
+    }
+
+    parser->pattern = pattern;
+    parser->pattern_count = pattern_count;
+
+    // Here you would typically register the pattern in a list or hash table
+    // For simplicity, we will just log the pattern registration
+    for (uint32_t i = 0; i < pattern_count; i++) {
+        PR_DEBUG("Registered response pattern[%d]: %s, ", i, pattern[i].pattern);
+    }
 
     return rt;
 }

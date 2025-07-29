@@ -48,14 +48,14 @@ typedef enum {
     AT_RESPONSE_MATCH_REGEX      /* Regular expression */
 } AT_RESPONSE_MATCH_TYPE_E;
 
-typedef struct {
+typedef struct at_response_pattern_t {
     const char *pattern;                 /* Pattern string */
     AT_RESPONSE_MATCH_TYPE_E match_type; /* Match type (exact, prefix, etc.) */
     AT_RESPONSE_TYPE_E response_type;    /* Response type */
     uint8_t is_final;                    /* Is final response */
     uint32_t pattern_hash;               /* Pre-computed hash for fast lookup */
     at_parser_callback_t callback;       /* Callback for handling response */
-} at_response_pattern_t;
+} AT_RESPONSE_PATTERN_T;
 
 typedef struct {
     // This can be used to define how the AT commands are terminated
@@ -72,7 +72,7 @@ OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length
 
 OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle);
 
-OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, at_response_pattern_t *pattern);
+OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern, uint32_t pattern_count);
 
 #ifdef __cplusplus
 }

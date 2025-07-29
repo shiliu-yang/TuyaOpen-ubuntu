@@ -6,6 +6,7 @@
  */
 
 #include "at_vendor_ml307.h"
+#include "at_parser.h"
 
 #include "at_modem.h"
 #include "at_utils.h"
@@ -555,4 +556,52 @@ OPERATE_RET at_vendor_ml307_register(void)
     };
 
     return at_modem_register_vendor(&vendor_ops);
+}
+
+static AT_RESPONSE_PATTERN_T ml307_response_patterns[] = {
+    {
+        .pattern = AT_RESPONSE_OK,
+        .match_type = AT_RESPONSE_MATCH_EXACT,
+        .response_type = AT_RESPONSE_TYPE_FINAL_OK,
+        .is_final = 1,
+        .pattern_hash = 0, // Hash can be computed if needed
+        .callback = NULL,  // No callback for this pattern
+    },
+    {
+        .pattern = AT_RESPONSE_ERROR,
+        .match_type = AT_RESPONSE_MATCH_EXACT,
+        .response_type = AT_RESPONSE_TYPE_FINAL_ERROR,
+        .is_final = 1,
+        .pattern_hash = 0, // Hash can be computed if needed
+        .callback = NULL,  // No callback for this pattern
+    },
+    {
+        .pattern = AT_RESPONSE_ERROR_CME,
+        .match_type = AT_RESPONSE_MATCH_EXACT,
+        .response_type = AT_RESPONSE_TYPE_FINAL_ERROR,
+        .is_final = 1,
+        .pattern_hash = 0, // Hash can be computed if needed
+        .callback = NULL,  // No callback for this pattern
+    },
+    {
+        .pattern = AT_RESPONSE_ERROR_CMS,
+        .match_type = AT_RESPONSE_MATCH_EXACT,
+        .response_type = AT_RESPONSE_TYPE_FINAL_ERROR,
+        .is_final = 1,
+        .pattern_hash = 0, // Hash can be computed if needed
+        .callback = NULL,  // No callback for this pattern
+    },
+    {
+        .pattern = AT_RESPONSE_ERROR_CIS,
+        .match_type = AT_RESPONSE_MATCH_EXACT,
+        .response_type = AT_RESPONSE_TYPE_FINAL_ERROR,
+        .is_final = 1,
+        .pattern_hash = 0, // Hash can be computed if needed
+        .callback = NULL,  // No callback for this pattern
+    },
+};
+
+OPERATE_RET at_vendor_ml307_parse_register(AT_PARSER_HANDLE handle)
+{
+    return at_parser_response_pattern_reg(handle, &ml307_response_patterns, sizeof(ml307_response_patterns) / sizeof(ml307_response_patterns[0]));
 }

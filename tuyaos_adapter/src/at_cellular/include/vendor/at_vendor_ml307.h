@@ -9,6 +9,7 @@
 #define __AT_VENDOR_ML307_H__
 
 #include "tuya_cloud_types.h"
+#include "at_parser.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,6 +18,13 @@ extern "C" {
 /***********************************************************
 ************************macro define************************
 ***********************************************************/
+
+// Response codes
+#define AT_RESPONSE_OK "OK"
+#define AT_RESPONSE_ERROR "ERROR"
+#define AT_RESPONSE_ERROR_CME "+CME ERROR: "
+#define AT_RESPONSE_ERROR_CMS "+CMS ERROR: "
+#define AT_RESPONSE_ERROR_CIS "+CIS ERROR: "
 
 /***********************************************************
 ***********************typedef define***********************
@@ -39,6 +47,8 @@ OPERATE_RET at_vendor_ml307_gethostbyname(const char *domain, TUYA_IP_ADDR_T *ad
 OPERATE_RET at_vendor_ml307_send(const int fd, const void *buf, const uint32_t nbytes);
 
 OPERATE_RET at_vendor_ml307_read(const int fd, void *buf, const uint32_t nbytes);
+
+OPERATE_RET at_vendor_ml307_parse_register(AT_PARSER_HANDLE handle);
 
 #ifdef __cplusplus
 }
