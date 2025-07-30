@@ -167,6 +167,8 @@ static void *__tty_irq_handler(void *arg)
 
             ssize_t readlen = read(uart_dev->fd, uart_dev->readbuff, sizeof(uart_dev->readbuff));
 
+            PR_HEXDUMP_DEBUG("tkl read data", uart_dev->readbuff, readlen);
+
             if (readlen > 0) {
                 uart_queue_put(uart_dev, uart_dev->readbuff, readlen);
                 if (uart_dev->rx_cb) {

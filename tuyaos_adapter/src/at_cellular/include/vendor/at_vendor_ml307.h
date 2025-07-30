@@ -20,11 +20,11 @@ extern "C" {
 ***********************************************************/
 
 // Response codes
-#define AT_RESPONSE_OK "OK"
-#define AT_RESPONSE_ERROR "ERROR"
-#define AT_RESPONSE_ERROR_CME "+CME ERROR: "
-#define AT_RESPONSE_ERROR_CMS "+CMS ERROR: "
-#define AT_RESPONSE_ERROR_CIS "+CIS ERROR: "
+#define AT_RESPONSE_OK          "OK\r\n"
+#define AT_RESPONSE_ERROR       "ERROR\r\n"
+#define AT_RESPONSE_ERROR_CME   "+CME ERROR: "
+#define AT_RESPONSE_ERROR_CMS   "+CMS ERROR: "
+#define AT_RESPONSE_ERROR_CIS   "+CIS ERROR: "
 
 /***********************************************************
 ***********************typedef define***********************

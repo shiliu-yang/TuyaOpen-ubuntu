@@ -10,6 +10,8 @@
 
 #include "tuya_cloud_types.h"
 
+#include "at_parser.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,10 +23,15 @@ extern "C" {
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
+typedef void (*ON_INTERMEDIATE_CB)(const char *line);
 
 /***********************************************************
 ********************function declaration********************
 ***********************************************************/
+
+OPERATE_RET at_client_init(char *transport_name);
+
+OPERATE_RET at_client_send(char *cmd, uint32_t cmd_length, uint32_t timeout_ms, AT_LINE_T **line, uint32_t *line_num);
 
 #ifdef __cplusplus
 }

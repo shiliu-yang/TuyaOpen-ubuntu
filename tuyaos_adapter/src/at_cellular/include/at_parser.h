@@ -28,25 +28,30 @@ extern "C" {
 ***********************************************************/
 typedef void *AT_PARSER_HANDLE;
 
-typedef void (*at_parser_callback_t)(const char *line, uint32_t length);
+typedef void (*at_parser_callback_t)(const char *line, uint32_t length, void *user_data);
 
 typedef enum {
-    AT_RESPONSE_TYPE_ECHO = 0,     /* Command echo */
-    AT_RESPONSE_TYPE_INTERMEDIATE, /* Intermediate data response */
-    AT_RESPONSE_TYPE_FINAL_OK,     /* Final success response */
-    AT_RESPONSE_TYPE_FINAL_ERROR,  /* Final error response */
-    AT_RESPONSE_TYPE_URC,          /* Unsolicited Result Code */
-    AT_RESPONSE_TYPE_UNKNOWN       /* Unknown response */
+    AT_RESPONSE_TYPE_INTERMEDIATE = 0, /* Intermediate data response */
+    AT_RESPONSE_TYPE_FINAL_OK,         /* Final success response */
+    AT_RESPONSE_TYPE_FINAL_ERROR,      /* Final error response */
+    AT_RESPONSE_TYPE_URC,              /* Unsolicited Result Code */
+    AT_RESPONSE_TYPE_UNKNOWN           /* Unknown response */
 } AT_RESPONSE_TYPE_E;
 
 /* Response match types */
 typedef enum {
-    AT_RESPONSE_MATCH_EXACT = 0, /* Exact string match */
-    AT_RESPONSE_MATCH_PREFIX,    /* Prefix match */
-    AT_RESPONSE_MATCH_SUFFIX,    /* Suffix match */
-    AT_RESPONSE_MATCH_CONTAINS,  /* Contains substring */
-    AT_RESPONSE_MATCH_REGEX      /* Regular expression */
+    MATCH_EXACT = 0, /* Exact string match */
+    MATCH_PREFIX,    /* Prefix match */
+    MATCH_SUFFIX,    /* Suffix match */
+    MATCH_CONTAINS   /* Contains substring */
 } AT_RESPONSE_MATCH_TYPE_E;
+
+typedef struct at_line {
+    struct at_line *next;
+
+    uint32_t length;
+    char *data;
+} AT_LINE_T;
 
 typedef struct at_response_pattern_t {
     const char *pattern;                 /* Pattern string */
@@ -55,6 +60,8 @@ typedef struct at_response_pattern_t {
     uint8_t is_final;                    /* Is final response */
     uint32_t pattern_hash;               /* Pre-computed hash for fast lookup */
     at_parser_callback_t callback;       /* Callback for handling response */
+    void *user_data;                     /* User data for callback */
+    struct at_response_pattern_t *next;  /* Pointer to the next pattern in the list */
 } AT_RESPONSE_PATTERN_T;
 
 typedef struct {
@@ -68,11 +75,21 @@ typedef struct {
 
 OPERATE_RET at_parser_init(AT_PARSER_HANDLE *handle, AT_PARSER_CFG_T *cfg);
 
-OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length);
-
 OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle);
 
-OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern, uint32_t pattern_count);
+OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern);
+
+char *at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t length);
+
+uint32_t at_parser_get_line_num(AT_PARSER_HANDLE handle);
+
+AT_LINE_T *at_parser_get_line(AT_PARSER_HANDLE handle, uint32_t index);
+
+AT_RESPONSE_PATTERN_T *at_parser_pattern_match(AT_PARSER_HANDLE handle, AT_LINE_T *line);
+
+OPERATE_RET at_parser_remove_line(AT_PARSER_HANDLE handle, AT_LINE_T *line);
+
+OPERATE_RET at_parser_split_lines(AT_PARSER_HANDLE handle, AT_LINE_T *split_start, uint32_t count);
 
 #ifdef __cplusplus
 }

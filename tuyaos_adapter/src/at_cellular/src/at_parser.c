@@ -20,13 +20,6 @@
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
-typedef struct at_line {
-    struct at_line *next;
-
-    uint32_t length;
-    char *data;
-} AT_LINE_T;
-
 typedef struct {
     uint32_t magic; // Magic number for validation
 
@@ -38,13 +31,14 @@ typedef struct {
     uint32_t line_count;  // Count of lines processed
 
     // response pattern
-    AT_RESPONSE_PATTERN_T *pattern;
-    uint32_t pattern_count; // Count of response patterns registered
+    AT_RESPONSE_PATTERN_T *pattern_head;
+    AT_RESPONSE_PATTERN_T *pattern_tail; // Pointer to the tail of the pattern list
+    uint32_t pattern_count;              // Count of response patterns registered
 } AT_PARSER_T;
+
 /***********************************************************
 ********************function declaration********************
 ***********************************************************/
-
 OPERATE_RET at_parser_free_line(AT_LINE_T *line);
 
 /***********************************************************
@@ -76,148 +70,6 @@ OPERATE_RET at_parser_init(AT_PARSER_HANDLE *handle, AT_PARSER_CFG_T *cfg)
     return rt;
 }
 
-// 数据解析
-OPERATE_RET at_parser_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
-{
-    OPERATE_RET rt = OPRT_OK;
-    
-    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
-    TUYA_CHECK_NULL_RETURN(data, OPRT_INVALID_PARM);
-    
-    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
-    
-    if (parser->magic != AT_PARSER_MAGIC) {
-        PR_ERR("Invalid AT parser magic number");
-        return OPRT_INVALID_PARM;
-    }
-    
-    // 1. 行解析：将原始数据解析成完整的行
-    rt = at_parser_line_input(handle, data, length);
-    if (rt != OPRT_OK) {
-        return rt;
-    }
-    
-    // 2. 响应处理：对解析出的行进行模式匹配和处理
-    rt = at_parser_process_lines(handle);
-    
-    return rt;
-}
-
-/**
- * @brief 处理已解析的行数据 - 响应匹配与处理层
- */
-static OPERATE_RET at_parser_process_lines(AT_PARSER_HANDLE handle)
-{
-    OPERATE_RET rt = OPRT_OK;
-    
-    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
-    AT_LINE_T *current_line = parser->line_head;
-    
-    // 遍历所有未处理的行
-    while (current_line != NULL) {
-        AT_LINE_T *next_line = current_line->next;
-        
-        // 对每一行进行响应匹配
-        at_response_pattern_t *matched_pattern = at_parser_match_response_pattern(parser, current_line->data);
-        
-        if (matched_pattern) {
-            // 找到匹配的模式，进行响应处理
-            at_parser_process_response(parser, current_line->data, matched_pattern);
-        } else {
-            // 未匹配的响应，记录或者作为未知响应处理
-            PR_WARN("Unknown response: %s", current_line->data);
-        }
-        
-        // 移除已处理的行
-        at_parser_remove_line(parser, current_line);
-        
-        current_line = next_line;
-    }
-    
-    return rt;
-}
-
-/**
- * @brief 响应模式匹配
- */
-static at_response_pattern_t *at_parser_match_response_pattern(AT_PARSER_T *parser, const char *line)
-{
-    if (!parser->pattern || parser->pattern_count == 0) {
-        return NULL;
-    }
-    
-    // 计算行的哈希值用于快速匹配
-    uint32_t line_hash = at_parser_compute_hash(line);
-    
-    // 遍历已注册的响应模式
-    for (uint32_t i = 0; i < parser->pattern_count; i++) {
-        at_response_pattern_t *pattern = &parser->pattern[i];
-        
-        // 快速哈希比较
-        if (pattern->pattern_hash != 0 && pattern->pattern_hash != line_hash) {
-            continue;
-        }
-        
-        // 精确匹配
-        if (at_parser_pattern_match(line, pattern)) {
-            return pattern;
-        }
-    }
-    
-    return NULL;
-}
-
-/**
- * @brief 处理匹配的响应 - 这就是您问的 process_response 功能
- */
-static OPERATE_RET at_parser_process_response(AT_PARSER_T *parser, const char *line, at_response_pattern_t *pattern)
-{
-    OPERATE_RET rt = OPRT_OK;
-    
-    PR_DEBUG("Processing response: %s, type: %d, is_final: %d", 
-             line, pattern->response_type, pattern->is_final);
-    
-    if (pattern->is_final) {
-        // 这是最终响应，命令执行完毕
-        if (pattern->response_type == AT_RESPONSE_TYPE_FINAL_OK) {
-            // 命令成功完成
-            PR_INFO("Command completed successfully");
-            at_parser_notify_command_success(parser, line);
-        } else if (pattern->response_type == AT_RESPONSE_TYPE_FINAL_ERROR) {
-            // 命令失败
-            PR_ERR("Command failed: %s", line);
-            at_parser_notify_command_error(parser, line);
-        }
-        
-        // 可以发送下一个命令了
-        at_parser_send_next_command(parser);
-        
-    } else {
-        // 这是中间响应，继续等待更多数据
-        switch (pattern->response_type) {
-            case AT_RESPONSE_TYPE_ECHO:
-                PR_DEBUG("Command echo received: %s", line);
-                break;
-                
-            case AT_RESPONSE_TYPE_INTERMEDIATE:
-                PR_DEBUG("Intermediate response: %s", line);
-                at_parser_collect_intermediate_response(parser, line);
-                break;
-                
-            case AT_RESPONSE_TYPE_URC:
-                PR_INFO("URC received: %s", line);
-                at_parser_handle_urc(parser, line, pattern);
-                break;
-                
-            default:
-                PR_WARN("Unknown response type: %d", pattern->response_type);
-                break;
-        }
-    }
-    
-    return rt;
-}
-
 OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle)
 {
     OPERATE_RET rt = OPRT_OK;
@@ -229,6 +81,14 @@ OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle)
     if (parser->magic != AT_PARSER_MAGIC) {
         PR_ERR("Invalid AT parser magic number");
         return OPRT_INVALID_PARM;
+    }
+
+    // Free all lines
+    AT_LINE_T *current_line = parser->line_head;
+    while (current_line) {
+        AT_LINE_T *next_line = current_line->next;
+        at_parser_free_line(current_line);
+        current_line = next_line;
     }
 
     tal_free(parser);
@@ -273,6 +133,8 @@ OPERATE_RET at_parser_add_line(AT_PARSER_HANDLE handle, const char *line_data, u
         parser->line_tail = new_line;
     }
 
+    parser->line_count++;
+
     // PR_DEBUG("Added line: %s", new_line->data);
     PR_HEXDUMP_DEBUG("Added line", new_line->data, new_line->length);
 
@@ -282,6 +144,126 @@ __ERR:
     at_parser_free_line(new_line);
 
     return rt;
+}
+
+OPERATE_RET at_parser_remove_line(AT_PARSER_HANDLE handle, AT_LINE_T *line)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(line, OPRT_INVALID_PARM);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return OPRT_INVALID_PARM;
+    }
+
+    if (parser->line_head == NULL) {
+        PR_ERR("No lines to remove");
+        return OPRT_INVALID_PARM;
+    }
+
+    // Find the line in the list
+    AT_LINE_T *current = parser->line_head;
+    AT_LINE_T *previous = NULL;
+
+    while (current) {
+        if (current == line) {
+            if (previous) {
+                previous->next = current->next;
+            } else {
+                parser->line_head = current->next;
+            }
+            if (parser->line_tail == current) {
+                parser->line_tail = previous;
+            }
+            parser->line_count--;
+            at_parser_free_line(current);
+            return OPRT_OK;
+        }
+        previous = current;
+        current = current->next;
+    }
+
+    PR_ERR("Line not found in parser");
+    return OPRT_NOT_FOUND;
+}
+
+OPERATE_RET at_parser_split_lines(AT_PARSER_HANDLE handle, AT_LINE_T *split_start, uint32_t count)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(split_start, OPRT_INVALID_PARM);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->line_head == NULL) {
+        PR_ERR("No lines to split");
+        return OPRT_INVALID_PARM;
+    }
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return OPRT_INVALID_PARM;
+    }
+
+    AT_LINE_T *current = parser->line_head;
+    AT_LINE_T *previous = NULL;
+    if (split_start == parser->line_head && count >= parser->line_count) {
+        parser->line_head = NULL;
+        parser->line_tail = NULL;
+        parser->line_count = 0;
+        PR_DEBUG("All lines removed from parser");
+        return OPRT_OK;
+    }
+
+    // find the split start line
+    previous = NULL;
+    current = parser->line_head;
+    while (current) {
+        if (current == split_start) {
+            break;
+        }
+        previous = current;
+        current = current->next;
+    }
+
+    if (current != split_start) {
+        PR_ERR("Split start line not found in parser");
+        return OPRT_NOT_FOUND;
+    }
+
+    // find the split end line
+    uint32_t split_count = 1;
+    AT_LINE_T *split_end = split_start;
+    for (uint32_t i = 1; i < count; i++) {
+        if (split_end->next != NULL) {
+            split_end = split_end->next;
+            split_count++;
+        } else {
+            PR_WARN("Not enough lines to split");
+            break;
+        }
+    }
+
+    if (previous == NULL) {
+        parser->line_head = split_end->next;
+    } else {
+        previous->next = split_end->next;
+    }
+
+    if (split_end == parser->line_tail) {
+        parser->line_tail = previous; // Update tail if we split the last line
+    }
+    split_end->next = NULL; // Disconnect the split end line from the list
+
+    // update the line count
+    parser->line_count -= split_count;
+
+    return OPRT_OK;
 }
 
 OPERATE_RET at_parser_free_line(AT_LINE_T *line)
@@ -300,18 +282,16 @@ OPERATE_RET at_parser_free_line(AT_LINE_T *line)
     return OPRT_OK;
 }
 
-OPERATE_RET at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
+char *at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t length)
 {
-    OPERATE_RET rt = OPRT_OK;
-
-    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
-    TUYA_CHECK_NULL_RETURN(data, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(handle, NULL);
+    TUYA_CHECK_NULL_RETURN(data, NULL);
 
     AT_PARSER_T *parser = (AT_PARSER_T *)handle;
 
     if (parser->magic != AT_PARSER_MAGIC) {
         PR_ERR("Invalid AT parser magic number");
-        return OPRT_INVALID_PARM;
+        return NULL;
     }
 
     char *p_start = data;
@@ -332,10 +312,91 @@ OPERATE_RET at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t l
         }
     } while (1);
 
-    return rt;
+    return p_start; // Return the next position after the last processed line
 }
 
-OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern, uint32_t pattern_count)
+AT_RESPONSE_PATTERN_T *at_parser_pattern_match(AT_PARSER_HANDLE handle, AT_LINE_T *line)
+{
+    AT_RESPONSE_PATTERN_T *matched_pattern = NULL;
+
+    TUYA_CHECK_NULL_RETURN(handle, NULL);
+    TUYA_CHECK_NULL_RETURN(line, NULL);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    for (uint32_t i = 0; i < parser->pattern_count; i++) {
+        AT_RESPONSE_PATTERN_T *pattern = &parser->pattern[i];
+
+        if (pattern->match_type == MATCH_EXACT) {
+            if (strncmp(line->data, pattern->pattern, line->length) == 0) {
+                matched_pattern = pattern;
+                break;
+            }
+        } else if (pattern->match_type == MATCH_PREFIX) {
+            if (strncmp(line->data, pattern->pattern, strlen(pattern->pattern)) == 0) {
+                matched_pattern = pattern;
+                break;
+            }
+        } else if (pattern->match_type == MATCH_SUFFIX) {
+            size_t suffix_length = strlen(pattern->pattern);
+            if (line->length >= suffix_length &&
+                strncmp(line->data + line->length - suffix_length, pattern->pattern, suffix_length) == 0) {
+                matched_pattern = pattern;
+                break;
+            }
+        } else if (pattern->match_type == MATCH_CONTAINS) {
+            if (strstr(line->data, pattern->pattern)) {
+                matched_pattern = pattern;
+                break;
+            }
+        } else {
+            PR_ERR("Unknown match type: %d", pattern->match_type);
+            return NULL; // Unknown match type
+        }
+    }
+
+    return matched_pattern;
+}
+
+AT_LINE_T *at_parser_get_line(AT_PARSER_HANDLE handle, uint32_t index)
+{
+    TUYA_CHECK_NULL_RETURN(handle, NULL);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return NULL;
+    }
+
+    if (index >= parser->line_count) {
+        PR_ERR("Index out of bounds: %d >= %d", index, parser->line_count);
+        return NULL;
+    }
+
+    AT_LINE_T *current_line = parser->line_head;
+    for (uint32_t i = 0; i < index && current_line; i++) {
+        current_line = current_line->next;
+    }
+
+    return current_line;
+}
+
+uint32_t at_parser_get_line_num(AT_PARSER_HANDLE handle)
+{
+    TUYA_CHECK_NULL_RETURN(handle, 0);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return 0;
+    }
+
+    return parser->line_count;
+}
+
+OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern)
 {
     OPERATE_RET rt = OPRT_OK;
 
@@ -349,14 +410,15 @@ OPERATE_RET at_parser_response_pattern_reg(AT_PARSER_HANDLE handle, AT_RESPONSE_
         return OPRT_INVALID_PARM;
     }
 
-    parser->pattern = pattern;
-    parser->pattern_count = pattern_count;
-
-    // Here you would typically register the pattern in a list or hash table
-    // For simplicity, we will just log the pattern registration
-    for (uint32_t i = 0; i < pattern_count; i++) {
-        PR_DEBUG("Registered response pattern[%d]: %s, ", i, pattern[i].pattern);
+    if (parser->pattern_head == NULL && parser->pattern_tail == NULL) {
+        parser->pattern_head = pattern;
+        parser->pattern_tail = pattern;
+    } else {
+        parser->pattern_tail->next = pattern;
+        parser->pattern_tail = pattern;
     }
+    pattern->next = NULL; // Ensure the new pattern's next pointer is NULL
+    parser->pattern_count++;
 
     return rt;
 }
