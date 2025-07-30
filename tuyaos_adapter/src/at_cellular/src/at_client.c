@@ -81,7 +81,7 @@ typedef struct {
 ***********************************************************/
 static char *AT_CLIENT_STATUS_STR[] = {"IDLE", "SENDING", "WAITING", "PROCESSING", "COMPLETED", "ERROR", "TIMEOUT"};
 
-static AT_CLIENT_T sg_at_client = {
+AT_CLIENT_T sg_at_client = {
     .thread_hdl = NULL,
     .mutex = NULL,
     .status = AT_CLIENT_STATUS_IDLE,
@@ -186,17 +186,28 @@ static void __at_client_thread(void *arg)
 
                 // Match patterns
                 AT_RESPONSE_PATTERN_T *matched_pattern = at_parser_pattern_match(sg_at_client.parser_hdl, line);
-                if (matched_pattern && matched_pattern->is_final) {
-                    PR_DEBUG("Matched pattern: %s", matched_pattern->pattern);
-                    rsp_ctx.num = i + 1; // Line number is 1-based
+                if (matched_pattern) {
+                    if (matched_pattern->response_type == AT_RESPONSE_TYPE_URC) {
+                        // URC response, handle it
+                        PR_DEBUG("URC matched: %s", matched_pattern->pattern);
+                        at_parser_split_lines(sg_at_client.parser_hdl, line, 1);
+                        if (matched_pattern->callback) {
+                            matched_pattern->callback(line->data, line->length, matched_pattern->user_data);
+                        }
+                    }
 
-                    at_parser_split_lines(sg_at_client.parser_hdl, rsp_ctx.line, rsp_ctx.num);
-                    PR_DEBUG("Final response matched, line number: %d", rsp_ctx.num);
+                    if (matched_pattern->is_final) {
+                        PR_DEBUG("Matched pattern: %s", matched_pattern->pattern);
+                        rsp_ctx.num = i + 1; // Line number is 1-based
 
-                    // Add response context to queue
-                    tal_queue_post(sg_at_client.rsp_queue, &rsp_ctx, TKL_QUEUE_WAIT_FROEVER);
-                    AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_COMPLETED);
-                    break;
+                        at_parser_split_lines(sg_at_client.parser_hdl, rsp_ctx.line, rsp_ctx.num);
+                        PR_DEBUG("Final response matched, line number: %d", rsp_ctx.num);
+
+                        // Add response context to queue
+                        tal_queue_post(sg_at_client.rsp_queue, &rsp_ctx, TKL_QUEUE_WAIT_FROEVER);
+                        AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_COMPLETED);
+                        break;
+                    }
                 } else {
                     AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_WAITING);
                 }
@@ -304,15 +315,36 @@ OPERATE_RET at_client_send(char *cmd, uint32_t cmd_length, uint32_t timeout_ms, 
     *line = rsp_ctx.line;
     *line_num = rsp_ctx.num;
 
-    // wait IDLE
-    // while (sg_at_client.status != AT_CLIENT_STATUS_IDLE) {
-    //     tal_system_sleep(20);
-    // }
+    tal_mutex_unlock(sg_at_client.mutex);
 
-    // Get the result of the send operation
-    // rt = sg_at_client.send_rt;
+    return rt;
+}
+
+OPERATE_RET at_client_get_one_line(AT_LINE_T **line)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(line, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(sg_at_client.parser_hdl, OPRT_INVALID_PARM);
+
+    tal_mutex_lock(sg_at_client.mutex);
+
+    while (0 == at_parser_get_line_num(sg_at_client.parser_hdl)) {
+        tal_system_sleep(50); // Wait for a line to be available
+    }
+
+    *line = at_parser_get_line(sg_at_client.parser_hdl, 0);
+    if (*line == NULL) {
+        PR_ERR("Failed to get line from AT parser");
+        tal_mutex_unlock(sg_at_client.mutex);
+        return OPRT_COM_ERROR;
+    }
+    at_parser_split_lines(sg_at_client.parser_hdl, *line, 1);
+    (*line)->next = NULL; // Ensure the next pointer is NULL
 
     tal_mutex_unlock(sg_at_client.mutex);
+
+    PR_DEBUG("at_client_get_one_line line: %.*s", (*line)->length, (*line)->data);
 
     return rt;
 }

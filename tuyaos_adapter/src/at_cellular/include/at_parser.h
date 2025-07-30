@@ -79,6 +79,10 @@ OPERATE_RET at_parser_deinit(AT_PARSER_HANDLE handle);
 
 OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern);
 
+OPERATE_RET at_parser_response_pattern_unregist(AT_PARSER_HANDLE handle, const char *pattern);
+
+OPERATE_RET at_parser_free_line(AT_LINE_T *line);
+
 char *at_parser_line_input(AT_PARSER_HANDLE handle, char *data, uint32_t length);
 
 uint32_t at_parser_get_line_num(AT_PARSER_HANDLE handle);

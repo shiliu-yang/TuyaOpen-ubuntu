@@ -324,9 +324,8 @@ AT_RESPONSE_PATTERN_T *at_parser_pattern_match(AT_PARSER_HANDLE handle, AT_LINE_
 
     AT_PARSER_T *parser = (AT_PARSER_T *)handle;
 
+    AT_RESPONSE_PATTERN_T *pattern = parser->pattern_head;
     for (uint32_t i = 0; i < parser->pattern_count; i++) {
-        AT_RESPONSE_PATTERN_T *pattern = &parser->pattern[i];
-
         if (pattern->match_type == MATCH_EXACT) {
             if (strncmp(line->data, pattern->pattern, line->length) == 0) {
                 matched_pattern = pattern;
@@ -353,6 +352,7 @@ AT_RESPONSE_PATTERN_T *at_parser_pattern_match(AT_PARSER_HANDLE handle, AT_LINE_
             PR_ERR("Unknown match type: %d", pattern->match_type);
             return NULL; // Unknown match type
         }
+        pattern = pattern->next;
     }
 
     return matched_pattern;
@@ -396,6 +396,24 @@ uint32_t at_parser_get_line_num(AT_PARSER_HANDLE handle)
     return parser->line_count;
 }
 
+AT_RESPONSE_PATTERN_T *at_parser_pattern_find(AT_PARSER_HANDLE handle, const char *pattern)
+{
+    TUYA_CHECK_NULL_RETURN(handle, NULL);
+    TUYA_CHECK_NULL_RETURN(pattern, NULL);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    AT_RESPONSE_PATTERN_T *current_pattern = parser->pattern_head;
+    while (current_pattern) {
+        if (strcmp(current_pattern->pattern, pattern) == 0) {
+            return current_pattern;
+        }
+        current_pattern = current_pattern->next;
+    }
+
+    return NULL; // Pattern not found
+}
+
 OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPONSE_PATTERN_T *pattern)
 {
     OPERATE_RET rt = OPRT_OK;
@@ -410,6 +428,11 @@ OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPON
         return OPRT_INVALID_PARM;
     }
 
+    if (at_parser_pattern_find(handle, pattern->pattern) != NULL) {
+        PR_WARN("Pattern already registered: %s", pattern->pattern);
+        return OPRT_COM_ERROR;
+    }
+
     if (parser->pattern_head == NULL && parser->pattern_tail == NULL) {
         parser->pattern_head = pattern;
         parser->pattern_tail = pattern;
@@ -421,4 +444,42 @@ OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPON
     parser->pattern_count++;
 
     return rt;
+}
+
+OPERATE_RET at_parser_response_pattern_unregist(AT_PARSER_HANDLE handle, const char *pattern)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(handle, OPRT_INVALID_PARM);
+    TUYA_CHECK_NULL_RETURN(pattern, OPRT_INVALID_PARM);
+
+    AT_PARSER_T *parser = (AT_PARSER_T *)handle;
+
+    if (parser->magic != AT_PARSER_MAGIC) {
+        PR_ERR("Invalid AT parser magic number");
+        return OPRT_INVALID_PARM;
+    }
+
+    AT_RESPONSE_PATTERN_T *current = parser->pattern_head;
+    AT_RESPONSE_PATTERN_T *previous = NULL;
+
+    while (current) {
+        if (strcmp(current->pattern, pattern) == 0) {
+            if (previous) {
+                previous->next = current->next;
+            } else {
+                parser->pattern_head = current->next;
+            }
+            if (parser->pattern_tail == current) {
+                parser->pattern_tail = previous; // Update tail if we removed the last pattern
+            }
+            parser->pattern_count--;
+            return OPRT_OK;
+        }
+        previous = current;
+        current = current->next;
+    }
+
+    PR_ERR("Pattern not found: %s", pattern);
+    return OPRT_NOT_FOUND;
 }
