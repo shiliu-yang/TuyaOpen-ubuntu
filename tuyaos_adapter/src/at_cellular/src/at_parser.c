@@ -26,14 +26,14 @@ typedef struct {
     // line ending
     char line_ending[LINE_ENDING_MAX_LENGTH];
 
-    AT_LINE_T *line_head; // Pointer to the head of the line list
-    AT_LINE_T *line_tail; // Pointer to the tail of the line list
-    uint32_t line_count;  // Count of lines processed
+    AT_LINE_T *line_head;         // Pointer to the head of the line list
+    AT_LINE_T *line_tail;         // Pointer to the tail of the line list
+    volatile uint32_t line_count; // Count of lines processed
 
     // response pattern
     AT_RESPONSE_PATTERN_T *pattern_head;
     AT_RESPONSE_PATTERN_T *pattern_tail; // Pointer to the tail of the pattern list
-    uint32_t pattern_count;              // Count of response patterns registered
+    volatile uint32_t pattern_count;     // Count of response patterns registered
 } AT_PARSER_T;
 
 /***********************************************************
@@ -135,8 +135,8 @@ OPERATE_RET at_parser_add_line(AT_PARSER_HANDLE handle, const char *line_data, u
 
     parser->line_count++;
 
-    // PR_DEBUG("Added line: %s", new_line->data);
-    PR_HEXDUMP_DEBUG("Added line", new_line->data, new_line->length);
+    PR_DEBUG("Added line: %s", new_line->data);
+    // PR_HEXDUMP_DEBUG("Added line", new_line->data, new_line->length);
 
     return OPRT_OK;
 
@@ -271,13 +271,15 @@ OPERATE_RET at_parser_free_line(AT_LINE_T *line)
     OPERATE_RET rt = OPRT_OK;
 
     TUYA_CHECK_NULL_RETURN(line, OPRT_INVALID_PARM);
+    PR_DEBUG("Freeing line: %p->%p", line, line->data);
 
     if (line->data) {
+        PR_DEBUG("Freeing line data: %.*s", line->length, line->data);
         tal_free(line->data);
         line->data = NULL;
     }
+    PR_DEBUG("Freeing line structure");
     tal_free(line);
-    line = NULL;
 
     return OPRT_OK;
 }
@@ -430,7 +432,7 @@ OPERATE_RET at_parser_response_pattern_regist(AT_PARSER_HANDLE handle, AT_RESPON
 
     if (at_parser_pattern_find(handle, pattern->pattern) != NULL) {
         PR_WARN("Pattern already registered: %s", pattern->pattern);
-        return OPRT_COM_ERROR;
+        return OPRT_OK;
     }
 
     if (parser->pattern_head == NULL && parser->pattern_tail == NULL) {

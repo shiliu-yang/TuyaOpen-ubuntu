@@ -18,7 +18,7 @@
 /***********************************************************
 ************************macro define************************
 ***********************************************************/
-#define AT_CLIENT_RECV_BUFFER_SIZE (5 * 1024) // Size of the receive buffer
+#define AT_CLIENT_RECV_BUFFER_SIZE (50 * 1024) // Size of the receive buffer
 
 #define AT_CLIENT_STATUS_CHANGE(new_status)                                                                            \
     do {                                                                                                               \
@@ -128,8 +128,8 @@ static void __at_client_thread(void *arg)
         case AT_CLIENT_STATUS_WAITING: {
             // Wait for response from transport layer
             // If response received, change status to PROCESSING
-            if (delay_ms != 20) {
-                delay_ms = 20;
+            if (delay_ms != 50) {
+                delay_ms = 50;
             }
 
             uint32_t available = tdl_transport_available(sg_at_client.transport_hdl);
@@ -141,8 +141,6 @@ static void __at_client_thread(void *arg)
                     sg_at_client.recv_buffer_used += read_len;
                     PR_DEBUG("Received %d bytes, total: %d bytes", read_len, sg_at_client.recv_buffer_used);
                 }
-            } else {
-                break;
             }
 
             if (sg_at_client.recv_buffer_used < 4) {
@@ -152,7 +150,8 @@ static void __at_client_thread(void *arg)
             // add line
             char *next_line =
                 at_parser_line_input(sg_at_client.parser_hdl, sg_at_client.recv_buffer, sg_at_client.recv_buffer_used);
-            if (NULL == next_line || next_line == sg_at_client.recv_buffer) {
+            if ((NULL == next_line || next_line == sg_at_client.recv_buffer) &&
+                at_parser_get_line_num(sg_at_client.parser_hdl) == 0) {
                 // No complete line found, continue waiting
                 break;
             } else {
@@ -161,14 +160,20 @@ static void __at_client_thread(void *arg)
                 memmove(sg_at_client.recv_buffer, next_line,
                         sg_at_client.recv_buffer_used - (next_line - sg_at_client.recv_buffer));
                 sg_at_client.recv_buffer_used -= (next_line - sg_at_client.recv_buffer);
+                // 其他部分设置为0
+                memset(sg_at_client.recv_buffer + sg_at_client.recv_buffer_used, 0,
+                       sg_at_client.recv_buffer_size - sg_at_client.recv_buffer_used);
                 AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_PROCESSING);
-                continue;
+            }
+
+            if (at_parser_get_line_num(sg_at_client.parser_hdl)) {
+                AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_PROCESSING);
             }
         } break;
         case AT_CLIENT_STATUS_PROCESSING: {
             // Process the response
             uint32_t line_num = at_parser_get_line_num(sg_at_client.parser_hdl);
-
+            PR_DEBUG("Processing response with %d lines", line_num);
             if (line_num == 0) {
                 PR_ERR("No lines to process");
                 AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_WAITING);
@@ -182,6 +187,7 @@ static void __at_client_thread(void *arg)
                 if (line == NULL) {
                     PR_ERR("Failed to get line %d", i);
                     AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_WAITING);
+                    break;
                 }
 
                 // Match patterns
@@ -190,10 +196,16 @@ static void __at_client_thread(void *arg)
                     if (matched_pattern->response_type == AT_RESPONSE_TYPE_URC) {
                         // URC response, handle it
                         PR_DEBUG("URC matched: %s", matched_pattern->pattern);
+                        // PR_DEBUG("URC %p->%p data: %.*s", line, line->data, line->length, line->data);
                         at_parser_split_lines(sg_at_client.parser_hdl, line, 1);
                         if (matched_pattern->callback) {
                             matched_pattern->callback(line->data, line->length, matched_pattern->user_data);
+                            // free the line after callback
+                            at_parser_free_line(line);
+                            line = NULL;
                         }
+                        // 改变了 line number ，等待下一次处理
+                        break;
                     }
 
                     if (matched_pattern->is_final) {
@@ -209,20 +221,26 @@ static void __at_client_thread(void *arg)
                         break;
                     }
                 } else {
-                    AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_WAITING);
+                    AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_IDLE);
                 }
             }
         } break;
         case AT_CLIENT_STATUS_COMPLETED: {
             // Command completed successfully
-            PR_DEBUG("Command completed successfully: %s", sg_at_client.cmd_context.cmd);
-            AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_IDLE);
+            // PR_DEBUG("Command completed successfully: %s", sg_at_client.cmd_context.cmd);
+            AT_CLIENT_STATUS_CHANGE(AT_CLIENT_STATUS_PROCESSING);
             sg_at_client.send_rt = OPRT_OK;
             // Reset command context
-            memset(&sg_at_client.cmd_context, 0, sizeof(AT_CMD_CONTEXT_T));
+            // memset(&sg_at_client.cmd_context, 0, sizeof(AT_CMD_CONTEXT_T));
+            sg_at_client.cmd_context.cmd = NULL;
+            sg_at_client.cmd_context.cmd_length = 0;
+            sg_at_client.cmd_context.send_time = 0;
+            sg_at_client.cmd_context.timeout_ms = 0;
+            sg_at_client.cmd_context.on_intermediate = NULL;
+
             // Reset receive buffer
-            memset(sg_at_client.recv_buffer, 0, sg_at_client.recv_buffer_size);
-            sg_at_client.recv_buffer_used = 0;
+            // memset(sg_at_client.recv_buffer, 0, sg_at_client.recv_buffer_size);
+            // sg_at_client.recv_buffer_used = 0;
             delay_ms = 100; // Reset delay to 100ms after completion
         } break;
         case AT_CLIENT_STATUS_ERROR: {
@@ -302,6 +320,18 @@ OPERATE_RET at_client_send(char *cmd, uint32_t cmd_length, uint32_t timeout_ms, 
 
     sg_at_client.send_rt = OPRT_OK;
 
+    uint32_t ttt_cnt = 0;
+    while (sg_at_client.status != AT_CLIENT_STATUS_IDLE) {
+        // Wait for the client to be idle
+        if (sg_at_client.status == AT_CLIENT_STATUS_WAITING) {
+            ttt_cnt++;
+            if (ttt_cnt * 50 > 500) { // Wait for 1 seconds
+                break;
+            }
+        }
+        tal_system_sleep(50);
+    }
+
     AT_CMD_CONTEXT_T *p_cmd = &sg_at_client.cmd_context;
     p_cmd->cmd = (char *)cmd;
     p_cmd->cmd_length = cmd_length;
@@ -345,6 +375,42 @@ OPERATE_RET at_client_get_one_line(AT_LINE_T **line)
     tal_mutex_unlock(sg_at_client.mutex);
 
     PR_DEBUG("at_client_get_one_line line: %.*s", (*line)->length, (*line)->data);
+
+    return rt;
+}
+
+OPERATE_RET at_client_free_lines(AT_LINE_T *line)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(line, OPRT_INVALID_PARM);
+
+    AT_LINE_T *tmp_line = line;
+    do {
+        AT_LINE_T *next_line = tmp_line->next;
+        at_parser_free_line(tmp_line);
+        tmp_line = next_line;
+    } while (tmp_line != NULL);
+
+    return rt;
+}
+
+OPERATE_RET at_client_response_pattern_regist(AT_RESPONSE_PATTERN_T *pattern)
+{
+    return at_parser_response_pattern_regist(sg_at_client.parser_hdl, pattern);
+}
+
+OPERATE_RET at_client_lines_dump(AT_LINE_T *line)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CHECK_NULL_RETURN(line, OPRT_INVALID_PARM);
+
+    AT_LINE_T *tmp_line = line;
+    while (tmp_line != NULL) {
+        PR_DEBUG("Line: %.*s", tmp_line->length, tmp_line->data);
+        tmp_line = tmp_line->next;
+    }
 
     return rt;
 }

@@ -35,6 +35,10 @@ OPERATE_RET at_client_send(char *cmd, uint32_t cmd_length, uint32_t timeout_ms, 
 
 OPERATE_RET at_client_get_one_line(AT_LINE_T **line);
 
+OPERATE_RET at_client_free_lines(AT_LINE_T *line);
+
+OPERATE_RET at_client_lines_dump(AT_LINE_T *line);
+
 #ifdef __cplusplus
 }
 #endif
